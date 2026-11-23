@@ -1,0 +1,44 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check version matches tag
+        run: |
+          python3 -m py_compile sshelper.py
+          version="$(python3 sshelper.py --version | awk '{print $2}')"
+          tag="${GITHUB_REF_NAME#v}"
+          if [ -z "$version" ]; then
+            echo "could not read __version__ from sshelper.py" >&2
+            exit 1
+          fi
+          if [ "$version" != "$tag" ]; then
+            echo "__version__ ($version) does not match tag ($tag)" >&2
+            exit 1
+          fi
+
+      - name: Build release asset
+        run: |
+          mkdir -p dist
+          cp sshelper.py dist/sshelper
+          chmod +x dist/sshelper
+          test -f dist/sshelper
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/sshelper
+          prerelease: false
+          draft: false
+          make_latest: true
