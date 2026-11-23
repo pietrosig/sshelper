@@ -67,7 +67,7 @@ DEFAULT_SETTINGS: dict = {
     "control_dirs": ["~/.ssh/cm"],
     "push_channel": True,
     "push_disabled_hosts": [],
-    "agent_skill_hosts": [],
+    "agent_skill_disabled_hosts": [],
     "retention_days": 60,
     "retention_count": 1000,
 }
@@ -1216,8 +1216,9 @@ class Daemon:
     # -- agent skill (Claude Code, Codex, ...) ------------------------------------------------
 
     def skill_enabled(self, conn: Conn) -> bool:
-        hosts = set(self.settings["agent_skill_hosts"])
-        return bool(conn.dest and (conn.dest in hosts or conn.id in hosts))
+        """On by default for every host; agent_skill_disabled_hosts opts out."""
+        off = set(self.settings["agent_skill_disabled_hosts"])
+        return bool(conn.dest) and conn.dest not in off and conn.id not in off
 
     def sync_skill(self, conn: Conn) -> None:
         """Install the skill on enabled hosts, remove our skill from the others."""
@@ -1249,12 +1250,12 @@ class Daemon:
 
     def set_skill(self, conn: Conn, enabled: bool) -> None:
         settings = load_settings()
-        hosts = [h for h in settings["agent_skill_hosts"] if h not in (conn.dest, conn.id)]
-        if enabled:
+        hosts = [h for h in settings["agent_skill_disabled_hosts"] if h not in (conn.dest, conn.id)]
+        if not enabled:
             hosts.append(conn.dest or conn.id)
-        settings["agent_skill_hosts"] = hosts
+        settings["agent_skill_disabled_hosts"] = hosts
         save_settings(settings)
-        self.settings["agent_skill_hosts"] = hosts
+        self.settings["agent_skill_disabled_hosts"] = hosts
         self.sync_skill(conn)
 
     def _write_remote_endpoint(self, conn: Conn) -> bool:
@@ -1402,7 +1403,7 @@ class Daemon:
                 "pushes": self.pushes[-500:],
                 "settings": {k: self.settings[k] for k in ("port", "browser", "push_channel",
                                                             "push_disabled_hosts",
-                                                            "agent_skill_hosts")},
+                                                            "agent_skill_disabled_hosts")},
             }
 
 
@@ -2491,7 +2492,7 @@ function connCard(c) {
     " ", h("button", {class: "icon", title: "rescan", onclick: () => api("detect", {conn: c.id})}, "↻")));
   if (!c.detected.length) det.append(h("div", {class: "empty"}, "no ports detected"));
   for (const d of c.detected) det.append(detectedRow(c, d));
-  const skillOn = (state.settings.agent_skill_hosts || []).some(x => x === c.dest || x === c.id);
+  const skillOn = !(state.settings.agent_skill_disabled_hosts || []).some(x => x === c.dest || x === c.id);
   const skill = h("div", {class: "rows"}, h("div", {class: "rows-title"}, "Agent skill"),
     h("div", {class: "row"},
       h("span", {class: "grow sub", title: "~/.claude/skills/sshelper and ~/.agents/skills/sshelper on " + (c.rhost || c.dest)},
@@ -2995,8 +2996,8 @@ class Tui:
                 rows.append({"text": "  no ports detected", "dim": True})
             head("")
             row("+ add forward…", "add", conn=c["id"])
-            skill_on = c["dest"] in st["settings"].get("agent_skill_hosts", []) or \
-                c["id"] in st["settings"].get("agent_skill_hosts", [])
+            skill_off = st["settings"].get("agent_skill_disabled_hosts", [])
+            skill_on = c["dest"] not in skill_off and c["id"] not in skill_off
             row(f"agent skill: {'on' if skill_on else 'off'}"
                 + (f"  ({c['skill']})" if c.get("skill") else ""), "skill", conn=c["id"], on=skill_on)
             row("browse files in browser", "files", conn=c["id"], home=c.get("home") or "/")
@@ -3436,13 +3437,15 @@ def cmd_agent(args: argparse.Namespace) -> int:
         info = ensure_daemon()
         state = wait_for_scan(info)
         if args.action == "status":
-            enabled = state["settings"].get("agent_skill_hosts", [])
+            disabled = state["settings"].get("agent_skill_disabled_hosts", [])
+            print("agent skill is on by default for every host; "
+                  "`sshelper agent off HOST` turns it off there")
             for c in state["connections"]:
-                on = c["dest"] in enabled or c["id"] in enabled
+                on = c["dest"] not in disabled and c["id"] not in disabled
                 print(f"{c['dest']:<18} {'on ' if on else 'off'}  {c.get('skill') or ''}")
-            offline = [h for h in enabled if h not in {c["dest"] for c in state["connections"]}]
+            offline = [h for h in disabled if h not in {c["dest"] for c in state["connections"]}]
             for host in offline:
-                print(f"{host:<18} on   (not connected; installed on next connect)")
+                print(f"{host:<18} off  (not connected)")
             return 0
         if not args.host:
             raise DaemonError("give a host")
@@ -3984,7 +3987,7 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--all", action="store_true")
     web = sub.add_parser("web", help="open the dashboard")
     web.add_argument("project", nargs="?")
-    ag = sub.add_parser("agent", help="agent skill on a host (Claude Code, Codex, ...) so its agents can push here")
+    ag = sub.add_parser("agent", help="agent skill (Claude Code, Codex, ...): on by default on every host; turn off/on per host")
     ag.add_argument("action", choices=["on", "off", "status"])
     ag.add_argument("host", nargs="?")
     dm = sub.add_parser("daemon", help="manage the background daemon")

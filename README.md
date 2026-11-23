@@ -71,7 +71,7 @@ sshelper open robopc 8080:9000   # remote 8080 -> localhost:9000
 sshelper open cluster gpu042:8888 --pin   # via the login node; reopen on reconnect
 sshelper close robopc 8080       # or --all
 sshelper web [project]           # open the dashboard
-sshelper agent on|off|status [HOST]   # agent skill on a remote (Claude Code, Codex, ...)
+sshelper agent on|off|status [HOST]   # agent skill per remote (on by default)
 sshelper doctor
 ```
 
@@ -95,11 +95,13 @@ writes into `~/.sshelper/` there:
 
 ### Agent skill (Claude Code, Codex, ...)
 
-Turn it on per host and every agent session there knows how to push:
+On by default: on every connection sshelper installs a skill on the remote, so
+every agent session there knows how to push. Turn it off for a host (this
+removes the skill there) with:
 
 ```bash
-sshelper agent on robopc      # or the "Agent skill" toggle in the TUI/dashboard
-sshelper agent off robopc     # removes it again
+sshelper agent off robopc     # or the "Agent skill" toggle in the TUI/dashboard
+sshelper agent on robopc      # back on
 sshelper agent status
 ```
 
@@ -162,10 +164,11 @@ Why not `curl ssh.localhost` on the remote: that would need port 80 there
 
 | Where | What |
 |---|---|
-| `~/.config/sshelper/settings.json` | settings (`port`, `browser`, `push_channel`, `push_disabled_hosts`, `control_dirs`, retention) |
+| `~/.config/sshelper/settings.json` | settings (`port`, `browser`, `push_channel`, `push_disabled_hosts`, `agent_skill_disabled_hosts`, `control_dirs`, retention) |
 | `~/.local/state/sshelper/` | `pushes.jsonl`, `forwards.json` (pins), `daemon.json`, `daemon.log` |
 | `~/.ssh/cm/` | ControlMaster sockets |
 | remote `~/.sshelper/` | `README.md` (instructions), `push` (helper), `hosts/<hostname>.env/.json` (port + token) |
+| remote `~/.agents/skills/sshelper/`, `~/.claude/skills/sshelper/` | agent skill (`SKILL.md`), unless turned off for that host |
 
 ## Updates
 
